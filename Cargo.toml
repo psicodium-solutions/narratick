@@ -1,0 +1,10 @@
+[package]
+name = "narratick"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+logos = "0.14.0"
+
+[profile.dev.package.logos]
+opt-level = 3
