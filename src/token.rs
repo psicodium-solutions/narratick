@@ -29,6 +29,8 @@ pub enum Token<'a> {
     Emit,
     #[token("@if")]
     If,
+    #[token("@fi")]
+    Fi,
     #[token("@end")]
     End,
 
@@ -45,7 +47,7 @@ pub enum Token<'a> {
         callback = |lex| lex.slice()
     )]
     Number(&'a str),
-    #[regex(r#"[\S]+"#, priority = 2, callback = |lex| lex.slice())]
+    #[regex(r#"\S+"#, priority = 2, callback = |lex| lex.slice())]
     Text(&'a str),
 }
 

@@ -55,6 +55,7 @@ pub enum Block<'a> {
         op: Op,
         rhs: Value<'a>,
     },
+    Fi,
     End,
 
     Text(&'a str),
@@ -184,18 +185,20 @@ impl<'a> Parser<'a> {
                 Token::Space(v) | Token::String(v) | Token::Text(v) | Token::Number(v) => {
                     if let Some(block) = current_block.take() {
                         if let Block::Text(_) = block {
-                            last_span.end = span.end;
-                            current_block = Some(Block::Text(&self.input[last_span.clone()]));
-                            continue;
-                        } else {
-                            self.blocks.push(block);
+                            // Line endings will cause this to be not contiguous
+                            if last_span.end == span.start {
+                                last_span.end = span.end;
+                                current_block = Some(Block::Text(&self.input[last_span.clone()]));
+                                continue;
+                            }
                         }
+
+                        self.blocks.push(block);
                     }
 
                     last_span = span;
                     current_block = Some(Block::Text(v));
                 }
-                // Token::Number(v) => buildable_block!(v, span),
                 Token::Title => single_field_block!(Title, "title"),
                 Token::Author => single_field_block!(Author, "author"),
                 Token::Anchor => single_field_block!(Anchor, "anchor"),
@@ -205,17 +208,25 @@ impl<'a> Parser<'a> {
 
                     discard_space!("set");
 
-                    let Some(name_block) = tokens.next() else {
+                    let Some(TokenData {
+                        token: name_token, ..
+                    }) = tokens.next()
+                    else {
                         return Err(crate::Error::insufficient_tokens("missing name for set"));
                     };
+                    let name = value_from_token!(name_token);
 
                     discard_space!("set");
 
-                    let Some(value_block) = tokens.next() else {
+                    let Some(TokenData {
+                        token: value_token, ..
+                    }) = tokens.next()
+                    else {
                         return Err(crate::Error::insufficient_tokens("missing value for set"));
                     };
+                    let value = value_from_token!(value_token);
 
-                    todo!()
+                    self.blocks.push(Block::Set { name, value });
                 }
                 Token::Emit => single_field_block!(Emit, "emit"),
                 Token::If => {
@@ -253,6 +264,11 @@ impl<'a> Parser<'a> {
 
                     self.blocks.push(Block::If { lhs, op, rhs });
                 }
+                Token::Fi => {
+                    clear_block!();
+
+                    self.blocks.push(Block::Fi);
+                }
                 Token::End => {
                     clear_block!();
 
@@ -262,7 +278,6 @@ impl<'a> Parser<'a> {
         }
 
         if let Some(block) = current_block.take() {
-            eprintln!("cleaning up last block");
             self.blocks.push(block);
         }
 
@@ -273,6 +288,30 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adhoc() {
+        let input = "
+@if 2 > 1
+this is a test
+and stuff
+@fi
+        ";
+        let mut parser = Parser::new(input);
+        let mut blocks = parser.parse().unwrap().clone().into_iter();
+
+        assert_eq!(
+            blocks.next(),
+            Some(Block::If {
+                lhs: Literal::Number(2.0).into(),
+                op: Op::Gt,
+                rhs: Literal::Number(1.0).into()
+            })
+        );
+        assert_eq!(blocks.next(), Some(Block::Text("this is a test")));
+        assert_eq!(blocks.next(), Some(Block::Text("and stuff")));
+        assert_eq!(blocks.next(), Some(Block::Fi));
+    }
 
     #[test]
     fn simple() {
@@ -296,6 +335,7 @@ mod tests {
             blocks.next(),
             Some(Block::Text("This is a test.   2.0 2.0."))
         );
+        assert_eq!(blocks.next(), Some(Block::Text("Test")));
         assert_eq!(blocks.next(), Some(Block::End));
     }
 }
